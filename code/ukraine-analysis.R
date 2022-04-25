@@ -2,7 +2,7 @@
 rm(list = ls())
 
 # Setting the current working directory
-setwd("/Users/davidtrakhtenberg/Downloads/text-as-data-project-main/data/")
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 # import libraries
 library(dplyr)
@@ -15,8 +15,13 @@ library(caret)
 library(randomForest)
 
 # read in file
-ukraine <- read.csv("ukraine_tweets.csv")
+ukraine <- read.csv("../data/ukraine_tweets.csv")
 ukraine$text <- gsub(pattern = "'", "", ukraine$text)  # replace apostrophes
+
+#format as date, remove Independents
+ukraine <- ukraine %>% mutate(created_at = as.Date(created_at, format = "%Y-%m-%d")) %>%
+  filter(grepl('D|R', Party))
+
 prop.table(table(ukraine$viral)) 
 # distribution of classes = 9:1 --> not viral: viral
 # should we pull more twitter data? or we can just use the appropriate eval metrics
