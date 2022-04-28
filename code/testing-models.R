@@ -77,6 +77,38 @@ cat(
 # Precision: 0.1587302 
 # F1-score: 0.1869159
 
+# look at discriminant features
+
+
+### Word Scores
+
+# randomly sample a test speech
+set.seed(1984L)
+ids <- 1:nrow(ukraine)
+# exclude one tweet for test set
+ids_test <- sample(ids, 1, replace = FALSE) 
+ids_train <- ids[-ids_test]
+train_set <- ukraine[ids_train,]
+test_set <- ukraine[ids_test,]
+
+# create DFMs
+train_dfm <- dfm(train_set$text, remove_punct = TRUE, remove = stopwords("english"))
+test_dfm <- dfm(test_set$text, remove_punct = TRUE, remove = stopwords("english"))
+
+ws_sm <- textmodel_wordscores(train_dfm, 
+                              y = train_set$viral - 1,
+                              smooth = 1
+)
+
+# Look at strongest features
+strong_features_dec <- sort(ws_sm$wordscores, decreasing = TRUE)  
+strong_features_dec[1:10]
+
+strong_features_inc <- sort(ws_sm$wordscores, decreasing = FALSE)  
+strong_features_inc[1:10]
+
+# plot ws scores
+plot(ws_sm$wordscores, ylim=c(-.905,-.896))
 
 ### SVM using caret
 
@@ -122,13 +154,82 @@ cat(
   "SVM-Radial Accuracy:",  svm_radial_cmat$overall[["Accuracy"]]
 )
 
+confusionMatrix(svm_linear_pred, test_y, mode = "prec_recall", positive = '1')
+# Precision : 0.17143        
+# Recall : 0.14458        
+# F1 : 0.15686    
 # Baseline Accuracy:  0.8991982 
 # SVM-Linear Accuracy: 0.8430699 
 # SVM-Radial Accuracy: 0.8991982
 
-## TO DO
-# Acc for SVM isn't very useful for our case; get recall/precision instead
-# Try RF, LogReg, etc
-# AUC could be good metric to use as it's invariant to base rate
-# Topic modelling - STM
-# unsupervised exploration on left vs right 
+# Loop through training sizes
+values <- list(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+for (i in values) {
+  # partition data
+  ids_train <- createDataPartition(1:nrow(ukraine_dfm), p = i, list = FALSE, times = 1)
+  train_x <- ukraine_dfm[ids_train, ] %>% as.data.frame() # train set data
+  train_y <- ukraine$viral[ids_train] %>% as.factor() # train set labels
+  
+  # val set
+  val_x <- ukraine_dfm[-ids_train, ] %>% as.data.frame() # val set data
+  val_y <- ukraine$viral[-ids_train] %>% as.factor() # val set labels
+  
+  # define training options
+  trctrl <- trainControl(method = "cv", number = 5)
+  
+  # enter training mode
+  svm_mod_linear <- train(x = train_x,
+                          y = train_y,
+                          method = 'svmLinear',
+                          trControl = trctrl)
+  
+  # out of sample preds
+  svm_linear_pred <- predict(svm_mod_linear, newdata = val_x)
+  
+  # conf mat
+  svm_linear_cmat <- confusionMatrix(svm_linear_pred, val_y)
+  metrics <- confusionMatrix(svm_linear_pred, val_y, mode = "prec_recall", positive = '1')
+  
+  # accuracy
+  acc_linear <- sum(diag(svm_linear_cmat$table))/sum(svm_linear_cmat$table)
+  print(paste("Training size:", i, "| Metrics:", metrics, "| Accuracy", acc_linear))
+}
+
+### Training size has little to no effect
+
+
+### Random Forest -- CURRENLTY TAKING A WHILE TO RUN 
+
+# create partition
+ids_train_rf <- createDataPartition(1:nrow(ukraine_dfm), p = 0.8, list = FALSE, times = 1)
+train_x <- ukraine_dfm[ids_train_rf, ] %>% as.data.frame() # train set data
+train_y <- ukraine$viral[ids_train_rf] %>% as.factor()  # train set labels
+
+# test set
+test_x <- ukraine_dfm[-ids_train_rf, ] %>% as.data.frame()
+test_y <- ukraine$viral[-ids_train_rf] %>% as.factor()
+
+# train rf
+rf <- randomForest(x = train_x, y = train_y, importance = TRUE)
+token_imp <- round(importance(rf, 2), 2)
+head(rownames(token_imp)[order(-token_imp)], 10) # 10 most important features
+
+# get 10 most important features
+varImpPlot(rf, n.var = 10, main = "Variable Importance")
+
+# predict and conf mat
+predict_test <- predict(rf, newdata = test_x)
+cmat_rf <- table(test_y, predict_test)
+nb_acc_sm <- sum(diag(cmat_rf))/sum(cmat_rf) # accuracy = (TP + TN) / (TP + FP + TN + FN)
+nb_recall_sm <- cmat_rf[2,2]/sum(cmat_rf[2,]) # recall = TP / (TP + FN)
+nb_precision_sm <- cmat_rf[2,2]/sum(cmat_rf[,2]) # precision = TP / (TP + FP)
+nb_f1_sm <- 2*(nb_recall_sm*nb_precision_sm)/(nb_recall_sm + nb_precision_sm)
+
+# report metrics
+cmat_rf
+cat(
+  "Accuracy:",  nb_acc_sm, "\n",
+  "Recall:",  nb_recall_sm, "\n",
+  "Precision:",  nb_precision_sm, "\n",
+  "F1-score:", nb_f1_sm
+)
