@@ -13,20 +13,28 @@ library(quanteda.textmodels)
 library(ggplot2)
 library(topicmodels)
 library(stm)
+library(ggpubr)
 
 # read in file
 ukraine <- read.csv("../data/ukraine_tweets.csv") %>% mutate(id_str = as.character(id_str))
+
 ukraine$text <- gsub(pattern = "'", "", ukraine$text)  # replace apostrophes
 
 #format as date, remove Independents
 ukraine <- ukraine %>% mutate(created_at = as.Date(created_at, format = "%Y-%m-%d")) %>%
-  filter(grepl('D|R', Party))
-
+  filter(grepl('D|R', Party))  
+  
 #form df to plot tweets over time
-to_plot <- ukraine %>% group_by(Party, created_at) %>% count()
+to_plot <- ukraine %>% group_by(Party, created_at) %>%
+  filter(created_at >= '2022-01-06 ') %>% count()
 
 #plot tweets over time
-ggplot(to_plot, aes(created_at, n)) + geom_line() + facet_grid(Party ~ .) + ylab('Number of Tweets') + ggtitle("Tweets per day by Party")
+ggplot(to_plot, aes(created_at, n)) + 
+  geom_line() + 
+  facet_grid(Party ~ .) + 
+  ylab('Number of Tweets') +
+  ggtitle("Tweets per day by Party") +
+  theme_bw()
 
 #clean up text
 ukraine$text <- gsub(" https.*","",ukraine$text) 
@@ -83,6 +91,7 @@ plot(stm_ukraine, type="perspectives", topics = c(3), main = 'Topic 3 Content by
 plot(stm_ukraine, type="perspectives", topics = c(4), main = 'Topic 4 Content by Party (Republican: 0 and Democrat: 1)')
 plot(stm_ukraine, type="perspectives", topics = c(5), main = 'Topic 5 Content by Party (Republican: 0 and Democrat: 1)') 
 plot(stm_ukraine, type="perspectives", topics = c(6), main = 'Topic 6 Content by Party (Republican: 0 and Democrat: 1)') 
+
 
 #how does the prevalence change over time
 plot(prep, "created_at", stm_ukraine, topics = c(3), 

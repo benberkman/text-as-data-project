@@ -18,10 +18,14 @@ library(broom)
 library(widyr)
 library(purrr)
 library(scales)
+library(ggpubr)
 set.seed(2017)
 
+group.colors <- c('D' = "#0015BC", 'R' = "#FF0000")
+
 # read in file
-ukraine <- read.csv("../data/ukraine_tweets.csv") %>% mutate(id_str = as.character(id_str))
+ukraine <- read.csv("../data/ukraine_tweets.csv") %>%
+  mutate(id_str = as.character(id_str))
 ukraine$text <- gsub(pattern = "'", "", ukraine$text)  # replace apostrophes
 
 #format as date, remove Independents
@@ -57,32 +61,44 @@ df_ukraine <- as.data.frame(dfm_ukraine) %>% mutate(sent_score = positive - nega
 df_ukraine <- df_ukraine %>% mutate(created_at = ukraine$created_at, party = ukraine$Party)
 
 #create classification and filter to tighter date range
-df_ukraine <- df_ukraine %>% mutate(classification = case_when(sent_score > 0 ~ 1, sent_score <= 0 ~ 0)) %>%
+df_ukraine <- df_ukraine %>% mutate(classification = case_when(sent_score > 0 ~ 1,
+                                                               sent_score <= 0 ~ 0)) %>%
   filter(created_at >= '2022-01-06 ')
 
 #plot sentiment scores by party
-ggplot(df_ukraine, aes(x=sent_score, fill = party)) + geom_histogram(bins = 20) +
+sent_score_paty <- ggplot(df_ukraine, aes(x=sent_score, fill = party)) + 
+  geom_histogram(bins = 18) +
   ggtitle("Sentiment Scores by Party") + theme_bw() +
   xlab('Sentiment Score') +
-  ylab('Count')
+  ylab('Count') + 
+  scale_fill_manual(values=group.colors)
+
+sent_score_paty
 
 #observe how sentiment changes by party, by date
-x <- df_ukraine %>% select(classification, created_at, party) %>% 
+by_date <- df_ukraine %>% 
+  select(classification, created_at, party) %>% 
   group_by(party, created_at = lubridate::floor_date(created_at, "week")) %>% 
   arrange(created_at) %>%
   summarize(classification = mean(classification, na.rm = FALSE)) 
 
 #observe how sentiment changes by party, by date
-ggplot(data=x, aes(x=created_at, y=classification, group=party, color = party)) +
+by_date_plot <- ggplot(data=by_date, aes(x=created_at, 
+                                         y=classification, group=party, color = party)) +
   geom_line(linetype = "dashed")+
   geom_point() +
-  ylab('Weekly mean sentiment classification (>= .5 is positive)') +
+  scale_colour_manual(values=group.colors) +
+  ylab('Weekly sentiment classification') +
   xlab('Date (2022)') +
   ggtitle('Sentiment Classification by Party and Week') + 
   theme_bw() + 
-  geom_vline(xintercept=as.numeric(x$created_at[21]), linetype=4) +
-  geom_text(aes(x=x$created_at[21], label="First Sanctions by USA", y=.58), colour="black", angle=0)
+  geom_vline(xintercept=as.numeric(by_date$created_at[21]), linetype=4) +
+  geom_text(aes(x=by_date$created_at[21], label="First Sanctions by USA", y=.58), colour="black", angle=0)
 
+by_date_plot
+
+ggarrange(sent_score_paty, by_date_plot,
+          ncol = 1, nrow = 2)
 
 ##### Additional Sentiment Analysis
 #Code adapted from: https://www.tidytextmining.com/usenet.html
@@ -93,7 +109,6 @@ cleaned_text <- ukraine %>%
          !str_detect(text, "writes(:|\\.\\.\\.)$"),
          !str_detect(text, "^In article <"))  %>%
   filter(created_at >= '2022-01-06 ')
-
 
 #extract words
 words <- cleaned_text %>%
@@ -117,7 +132,7 @@ tf_idf_party <- words_by_party %>%
   arrange(desc(tf_idf))
 
 #plot top tf idf words by party
-tf_idf_party %>%
+words_party_plot <- tf_idf_party %>%
   group_by(Party) %>%
   slice_max(tf_idf, n = 12) %>%
   ungroup() %>%
@@ -125,7 +140,12 @@ tf_idf_party %>%
   ggplot(aes(tf_idf, word, fill = Party)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ Party, scales = "free") +
-  labs(x = "tf-idf", y = NULL)
+  labs(x = "tf-idf weight", y = NULL) +
+  ggtitle('Which Words are Most Democratic or Republican?') + 
+  theme_bw() + 
+  scale_fill_manual(values=group.colors)
+
+words_party_plot
 
 #get sentiment by party
 party_sentiments <- words_by_party %>%
@@ -136,9 +156,12 @@ party_sentiments <- words_by_party %>%
 #plot sentiments by party
 party_sentiments %>%
   mutate(Party = reorder(Party, value)) %>%
-  ggplot(aes(value, Party, fill = value > 0)) +
+  ggplot(aes(value, Party, fill = Party)) +
   geom_col(show.legend = FALSE) +
-  labs(x = "Average sentiment value", y = NULL)
+  labs(x = "Average sentiment value", y = NULL) + 
+  ggtitle("Sentiment by Party") +
+  theme_bw() +
+  scale_fill_manual(values=group.colors)
 
 #which words are most positive and negative
 contributions <- words %>%
@@ -147,21 +170,13 @@ contributions <- words %>%
   summarize(occurences = n(),
             contribution = sum(value))
 
-#plot which words are most positive and negative
-contributions %>%
-  slice_max(abs(contribution), n = 25) %>%
-  mutate(word = reorder(word, contribution)) %>%
-  ggplot(aes(contribution, word, fill = contribution > 0)) +
-  geom_col(show.legend = FALSE) +
-  labs(y = NULL)
-
 #which words are most positive and negative by party
 top_sentiment_words <- words_by_party %>%
   inner_join(get_sentiments("afinn"), by = "word") %>%
   mutate(contribution = value * n / sum(n))
 
 #plot which words are most positive and negative by party
-top_sentiment_words %>%
+sent_party_plot <- top_sentiment_words %>%
   group_by(Party) %>%
   slice_max(abs(contribution), n = 12) %>%
   ungroup() %>%
@@ -171,7 +186,14 @@ top_sentiment_words %>%
   geom_col(show.legend = FALSE) +
   scale_y_reordered() +
   facet_wrap(~ Party, scales = "free") +
-  labs(x = "Sentiment value * # of occurrences", y = NULL)
+  labs(x = "Sentiment", y = NULL) +
+  ggtitle('Most Positive and Negative Words by Party') +
+  theme_bw()
+
+sent_party_plot
+
+ggarrange(words_party_plot, sent_party_plot,
+          ncol = 2, nrow = 1)
 
 #what are the most positive and negative tweets
 sentiment_messages <- words %>%
@@ -242,7 +264,11 @@ ggplot(frequency, aes(R, D)) +
   geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
   scale_x_log10(labels = percent_format()) +
   scale_y_log10(labels = percent_format()) +
-  geom_abline(color = "red")
+  geom_abline(color = "red") +
+  theme_bw() +
+  xlab('Republican') + 
+  ylab('Democrat') +
+  ggtitle('Which words skew most Dem. or Repub.?')
 
 #log odds ration
 word_ratios <- tidy_tweets %>%
