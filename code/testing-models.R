@@ -12,7 +12,7 @@ library(quanteda.textmodels)
 library(data.table)
 library(readtext)
 library(caret)
-library(randomForest)
+library(glmnet)
 
 # read in file
 ukraine <- read.csv("../data/ukraine_tweets.csv")
@@ -21,11 +21,6 @@ ukraine$text <- gsub(pattern = "'", "", ukraine$text)  # replace apostrophes
 #format as date, remove Independents
 ukraine <- ukraine %>% mutate(created_at = as.Date(created_at, format = "%Y-%m-%d")) %>%
   filter(grepl('D|R', Party))
-
-prop.table(table(ukraine$viral)) 
-# distribution of classes = 9:1 --> not viral: viral
-# should we pull more twitter data? or we can just use the appropriate eval metrics
-table(ukraine$viral)
 
 ### Naive Bayes
 # split sample into training & test sets
@@ -42,10 +37,6 @@ test_set <- ukraine[ids_test,]
 # get dfm for each set
 train_dfm <- dfm(train_set$text, stem = TRUE, remove_punct = TRUE, remove = stopwords("english"))
 test_dfm <- dfm(test_set$text, stem = TRUE, remove_punct = TRUE, remove = stopwords("english"))
-
-test_dfm_df <- convert(test_dfm, to = "data.frame")
-train_dfm_df <- convert(train_dfm, to = "data.frame")
-
 
 # match test set dfm to train set dfm features
 test_dfm <- dfm_match(test_dfm, features = featnames(train_dfm))
@@ -77,9 +68,6 @@ cat(
 # Precision: 0.1587302 
 # F1-score: 0.1869159
 
-# look at discriminant features
-
-
 ### Word Scores
 
 # randomly sample a test speech
@@ -96,19 +84,20 @@ train_dfm <- dfm(train_set$text, remove_punct = TRUE, remove = stopwords("englis
 test_dfm <- dfm(test_set$text, remove_punct = TRUE, remove = stopwords("english"))
 
 ws_sm <- textmodel_wordscores(train_dfm, 
-                              y = train_set$viral - 1,
+                              y = 2*train_set$viral - 1,
                               smooth = 1
 )
 
 # Look at strongest features
 strong_features_dec <- sort(ws_sm$wordscores, decreasing = TRUE)  
-strong_features_dec[1:10]
+strong_features_dec[1:15]
 
 strong_features_inc <- sort(ws_sm$wordscores, decreasing = FALSE)  
 strong_features_inc[1:10]
 
 # plot ws scores
-plot(ws_sm$wordscores, ylim=c(-.905,-.896))
+plot(ws_sm$wordscores, xlab="Count (of words)", ylab="Wordscore", main="Do word scores vary between parties?")
+
 
 ### SVM using caret
 
@@ -197,7 +186,62 @@ for (i in values) {
 
 ### Training size has little to no effect
 
+### Logistic Regression
 
+set.seed(1984L)
+prop_train <- 0.8 # open to change this
+# Save the indexes
+ids <- 1:nrow(ukraine)
+
+ids_train <- sample(ids, ceiling(prop_train*length(ids)), replace = FALSE)
+ids_test <- ids[-ids_train]
+train_set <- ukraine[ids_train,]
+test_set <- ukraine[ids_test,]
+
+# get dfm for each set
+train_dfm <- dfm(train_set$text, stem = TRUE, remove_punct = TRUE, remove = stopwords("english"))
+test_dfm <- dfm(test_set$text, stem = TRUE, remove_punct = TRUE, remove = stopwords("english"))
+
+# train model 
+lr <- textmodel_lr(train_dfm, train_set$viral)
+
+# get confusion matrix
+cmat <- table(test_set$viral, predicted_class)
+acc <- sum(diag(cmat))/sum(cmat) # accuracy = (TP + TN) / (TP + FP + TN + FN)
+recall <- cmat[2,2]/sum(cmat[2,]) # recall = TP / (TP + FN)
+precision <- cmat[2,2]/sum(cmat[,2]) # precision = TP / (TP + FP)
+f1 <- 2*(recall*precision)/(recall + precision)
+
+# print
+cat(
+  # "Baseline Accuracy: ", baseline_acc, "\n",
+  "Accuracy:",  acc, "\n",
+  "Recall:",  recall, "\n",
+  "Precision:",  precision, "\n",
+  "F1-score:", f1
+)
+
+# Accuracy: 0.899654 
+# Recall: 0.0755814 
+# Precision: 0.1733333 
+# F1-score: 0.1052632
+
+lr <- cv.glmnet(
+  x = train_dfm, 
+  y = train_set$viral,
+  family = "binomial",
+  nfolds = 5,
+  alpha = 1,
+  type.measure = "auc",
+  maxit = 10000,
+  parallel = TRUE
+)
+
+# visualize regularization
+plot(lr, xvar="labmda", label=TRUE)
+
+
+####### RESULTS NOT DISCUSSED IN PAPER ######
 ### Random Forest -- CURRENLTY TAKING A WHILE TO RUN 
 
 # create partition
