@@ -105,7 +105,6 @@ plot(stm_ukraine, type="perspectives", topics = c(6), main = 'Topic 6 Content by
 plot(prep, "created_at", stm_ukraine, topics = c(3), 
      method = "continuous", xaxt = "n", xlab = "Date", main = 'Topic 3 Prevalence Over Time')
 
-
 #### Assessing Virality ####
 
 #get top topic for each document
@@ -115,18 +114,19 @@ topic_doc = apply(stm_viral$theta, MARGIN=1, FUN=which.max)
 meta$top_topic = topic_doc
 
 #select only these two cols
-for_model <- meta %>% select(viral, top_topic)
+for_model <- meta %>% select(viral, top_topic, Party)
 
 #one hot encodes the topic assignment
 for_model$top_topic <- as.factor(for_model$top_topic)
 dummy <- dummyVars(" ~ .", data=for_model)
-for_model <- data.frame(predict(dummy, newdata = for_model)) 
+for_model <- data.frame(predict(dummy, newdata = for_model)) %>%
+  filter('Party.I' != 0) %>%
+  select(-Party.R, -Party.I)
 
-#linear model, does topic pretty virality
+#linear model, does topic and party predict virality
 model <- lm(viral~.,for_model)
 
 #which topics are most predictive?
 summary(model)
 
-
-### try classification models here?
+### try classification models here
