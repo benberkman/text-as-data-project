@@ -12,7 +12,9 @@ library(quanteda.corpora)
 library(quanteda.textmodels)
 library(ggplot2)
 library(topicmodels)
+library(caret)
 library(stm)
+library(mltools)
 library(ggpubr)
 
 # read in file
@@ -62,6 +64,13 @@ docs <- prepped$documents
 vocab <- prepped$vocab
 meta <- prepped$meta
 
+#build 40 topic stm model for use in regression
+#commented out because it's already built and saved
+#can just load from below
+#stm_40 <- stm(docs, vocab, K = 40, prevalence = ~meta$Party_binary + s(meta$created_at), content = meta$Party_binary)
+#saveRDS(stm_40, file = paste0(getwd(), '/virality_stm.rds'))
+stm_viral <- readRDS(paste0(getwd(), '/virality_stm.rds'))
+
 #build stm model
 #commented out because it's already built and saved
 #can just load from below
@@ -92,8 +101,32 @@ plot(stm_ukraine, type="perspectives", topics = c(4), main = 'Topic 4 Content by
 plot(stm_ukraine, type="perspectives", topics = c(5), main = 'Topic 5 Content by Party (Republican: 0 and Democrat: 1)') 
 plot(stm_ukraine, type="perspectives", topics = c(6), main = 'Topic 6 Content by Party (Republican: 0 and Democrat: 1)') 
 
-
 #how does the prevalence change over time
 plot(prep, "created_at", stm_ukraine, topics = c(3), 
      method = "continuous", xaxt = "n", xlab = "Date", main = 'Topic 3 Prevalence Over Time')
 
+
+#### Assessing Virality ####
+
+#get top topic for each document
+topic_doc = apply(stm_viral$theta, MARGIN=1, FUN=which.max)
+
+#assigns it as a col
+meta$top_topic = topic_doc
+
+#select only these two cols
+for_model <- meta %>% select(viral, top_topic)
+
+#one hot encodes the topic assignment
+for_model$top_topic <- as.factor(for_model$top_topic)
+dummy <- dummyVars(" ~ .", data=for_model)
+for_model <- data.frame(predict(dummy, newdata = for_model)) 
+
+#linear model, does topic pretty virality
+model <- lm(viral~.,for_model)
+
+#which topics are most predictive?
+summary(model)
+
+
+### try classification models here?
