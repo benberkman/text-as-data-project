@@ -110,6 +110,9 @@ plot(prep, "created_at", stm_ukraine, topics = c(3),
 #get top topic for each document
 topic_doc = apply(stm_viral$theta, MARGIN=1, FUN=which.max)
 
+#see which topics are which (for reference)
+plot(stm_viral, type = "summary")
+
 #assigns it as a col
 meta$top_topic = topic_doc
 
@@ -130,3 +133,4 @@ model <- lm(viral~.,for_model)
 summary(model)
 
 ### try classification models here
+
