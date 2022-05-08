@@ -241,8 +241,7 @@ lr <- cv.glmnet(
 plot(lr, xvar="labmda", label=TRUE)
 
 
-####### RESULTS NOT DISCUSSED IN PAPER ######
-### Random Forest -- CURRENLTY TAKING A WHILE TO RUN 
+### Random Forest 
 
 # create partition
 ids_train_rf <- createDataPartition(1:nrow(ukraine_dfm), p = 0.8, list = FALSE, times = 1)
