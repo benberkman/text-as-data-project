@@ -126,11 +126,11 @@ for_model <- data.frame(predict(dummy, newdata = for_model)) %>%
   filter('Party.I' != 0) %>%
   select(-Party.R, -Party.I)
 
-#linear model, does topic and party predict virality
-model <- lm(viral~.,for_model)
-
-#which topics are most predictive?
-summary(model)
+  #linear model, does topic and party predict virality
+  model <- lm(viral~.,df)
+  
+  #which topics are most predictive?
+  summary(model)
 
 ### try classification models here
 
